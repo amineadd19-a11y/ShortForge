@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     if (typeof body.start !== 'number' || typeof body.end !== 'number') return NextResponse.json({ error: 'A valid clip range is required.' }, { status: 400 });
     if (typeof body.platform !== 'string' || !platforms.has(body.platform as Platform)) return NextResponse.json({ error: 'Unsupported platform.' }, { status: 400 });
 
-    const plan = createRenderPlan(body.platform as Platform, body.end - body.start);
+    const plan = createRenderPlan(body.platform as Platform, body.start, body.end);
     const worker = createRenderWorker();
     const job = await worker.submit({ sourceUrl: `https://www.youtube.com/watch?v=${videoId}`, plan });
     return NextResponse.json({ ...job, videoId, plan }, { status: 202 });
