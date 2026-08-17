@@ -11,13 +11,11 @@ export type FfmpegSpec = {
  */
 export function buildFfmpegSpec(plan: RenderPlan): FfmpegSpec {
   const duration = Math.max(0.1, plan.maxDurationSeconds);
-  const crop = plan.crop === 'smart-speaker'
-    ? 'crop=ih*9/16:ih:(iw-ih*9/16)/2:0'
-    : 'crop=ih*9/16:ih:(iw-ih*9/16)/2:0';
+  const crop = 'crop=ih*9/16:ih:(iw-ih*9/16)/2:0';
 
   return {
     inputArgs: ['-ss', 'START', '-i', 'INPUT'],
     filterComplex: `[0:v]${crop},scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1[v]`,
-    outputArgs: ['-map', '[v]', '-map', '0:a?', '-t', String(duration), '-r', String(plan.fps ?? 30), '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-c:a', 'aac', '-movflags', '+faststart', 'OUTPUT.mp4'],
+    outputArgs: ['-map', '[v]', '-map', '0:a?', '-t', String(duration), '-r', '30', '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-c:a', 'aac', '-movflags', '+faststart', 'OUTPUT.mp4'],
   };
 }
