@@ -18,7 +18,7 @@ export type VideoSource = {
 export type AnalysisResult = {
   source: VideoSource;
   transcript: { status: 'ready' | 'unavailable'; segments: TranscriptSegment[]; message?: string };
-  clips: Array<ClipCandidate & { scoresByPlatform: Record<Platform, number> }>;
+  clips: Array<ClipCandidate & { viralScore: number; scoresByPlatform: Record<Platform, number> }>;
   platform: Platform;
   limitations: string[];
 };
