@@ -12,7 +12,7 @@ export function buildDynamicCropFilter(tracks, inputWidth, inputHeight, outputWi
   const start = Math.min(maxX, Math.max(0, initial));
   const expr = points.reduce((acc, p, i) => {
     const x = Math.min(maxX, Math.max(0, Math.round(p.x * inputWidth - cropWidth / 2)));
-    return i === 0 ? `${x}` : `if(gte(t\,${p.t.toFixed(3)})\,${x}\,${acc})`;
+    return i === 0 ? `${x}` : `if(gte(t\\,${p.t.toFixed(3)})\\,${x}\\,${acc})`;
   }, String(start));
-  return `crop=${cropWidth}:${inputHeight}:min(max(0\,${expr})\,iw-${cropWidth})`:;
+  return `crop=${cropWidth}:${inputHeight}:min(max(0\\,${expr})\\,iw-${cropWidth}):0`;
 }
