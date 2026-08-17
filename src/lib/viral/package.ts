@@ -1,0 +1,2 @@
+export type PackagePlatform='youtube'|'tiktok'|'reels';
+export function buildViralPackage(title:string,hook:string,platform:PackagePlatform){const clean=(title||hook||'ShortForge clip').replace(/[#\n]/g,' ').trim();const base=clean.slice(0,90);const tags=platform==='youtube'?['#Shorts','#YouTubeShorts']:platform==='tiktok'?['#TikTok','#FYP']:['#Reels','#InstagramReels'];return {title:base,caption:`${hook||base}`.slice(0,220),hashtags:tags,disclaimer:'Performance is not guaranteed; optimize and test.'};}
