@@ -7,9 +7,23 @@ services:
       - "8787:8787"
     env_file:
       - .env
+    environment:
+      PORT: 8787
+      WORK_DIR: /tmp/shortforge
+    volumes:
+      - worker-tmp:/tmp/shortforge
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/healthz')"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8787/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
       interval: 30s
       timeout: 5s
       retries: 3
+
+volumes:
+  worker-tmp:

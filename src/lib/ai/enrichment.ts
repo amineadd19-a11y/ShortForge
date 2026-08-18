@@ -18,6 +18,7 @@ export async function enrichClipHints(input: {
 }): Promise<EnrichmentResult> {
   const provider = process.env.AI_PROVIDER?.trim();
   const key = process.env.AI_API_KEY?.trim();
+  const model = process.env.AI_MODEL?.trim();
 
   if (!provider || !key) {
     return {
@@ -26,7 +27,6 @@ export async function enrichClipHints(input: {
     };
   }
 
-  // Provider-agnostic placeholder: only call when a concrete HTTP endpoint is set.
   if (!/^https:\/\//i.test(provider)) {
     return {
       status: 'skipped',
@@ -43,10 +43,10 @@ export async function enrichClipHints(input: {
       },
       body: JSON.stringify({
         task: 'clip-hints',
+        model: model || undefined,
         platform: input.platform,
         title: input.title,
         hook: input.hook,
-        // Pass transcript for style hints only — provider must not invent new facts
         transcriptExcerpt: input.transcript.slice(0, 1200),
         rules: [
           'Do not invent timestamps',
@@ -65,7 +65,9 @@ export async function enrichClipHints(input: {
 
     const data = (await response.json()) as { suggestions?: unknown };
     const suggestions = Array.isArray(data.suggestions)
-      ? data.suggestions.filter((s): s is string => typeof s === 'string' && s.trim().length > 0).slice(0, 6)
+      ? data.suggestions
+          .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+          .slice(0, 6)
       : [];
 
     return suggestions.length
