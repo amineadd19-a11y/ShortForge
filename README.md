@@ -1,14 +1,29 @@
 # ShortForge AI
 
-AI-powered long-form video to short-form content studio.
+AI-powered long-form video → short-form content studio.
 
 ## Product
 
-ShortForge turns an authorized YouTube video into a research-driven short-form workflow:
+ShortForge turns an **authorized** YouTube video into a research-driven short-form workflow:
 
-**URL → analysis → transcript → candidate moments → retention scoring → platform variants → render/export**
+**URL → metadata → transcript → candidate moments → retention scoring → platform variants → render/export**
 
-The product is designed for YouTube Shorts, TikTok and Reels. It does not promise viral results; it optimizes for observable content signals and keeps predictions clearly labeled.
+Targets: **YouTube Shorts**, **TikTok**, **Instagram Reels**.
+
+Scores are **optimization signals**, not guarantees of reach.
+
+## What works today
+
+| Capability | Status |
+|------------|--------|
+| YouTube URL validation | ✅ |
+| oEmbed metadata + thumbnail | ✅ |
+| Official YouTube timedtext captions | ✅ (when uploader enabled captions) |
+| External transcript provider hook | ✅ `TRANSCRIPT_PROVIDER` |
+| Heuristic moment detection | ✅ |
+| Platform-weighted scoring | ✅ Shorts / TikTok / Reels |
+| Auto-Short plan + render job API | ✅ (needs `RENDER_WORKER_URL`) |
+| Docker media worker | ✅ under `/worker` |
 
 ## Principles
 
@@ -20,29 +35,48 @@ The product is designed for YouTube Shorts, TikTok and Reels. It does not promis
 
 ## Architecture
 
-- Next.js App Router + TypeScript
-- Tailwind CSS
-- Zod validation
-- Provider-agnostic analysis contracts
-- Separate media/render pipeline boundary
-- Shared scoring model for Shorts/TikTok/Reels
+- **App:** Next.js App Router + TypeScript + Tailwind + Zod
+- **Analysis:** deterministic clip windows + platform weight matrix
+- **Transcript:** external provider **or** official YouTube captions
+- **Render:** separate worker (`RENDER_WORKER_URL`) with FFmpeg pipeline
 
 ## Development
 
 ```bash
 npm install
+cp .env.example .env.local
 npm run dev
 ```
 
 Quality gate:
 
 ```bash
-npm run lint
-npm run typecheck
-npm test
-npm run build
+npm run quality-gate
 ```
 
 ## Environment
 
-Copy `.env.example` to `.env.local`. Provider keys are server-only and must never be exposed to the browser.
+```text
+# Optional external transcript API
+TRANSCRIPT_PROVIDER=
+TRANSCRIPT_API_KEY=
+
+# Required for actual media rendering
+RENDER_WORKER_URL=
+RENDER_WORKER_TOKEN=
+
+# Optional future AI enrichment
+AI_PROVIDER=
+AI_API_KEY=
+```
+
+Never expose secrets with `NEXT_PUBLIC_`.
+
+## API
+
+- `POST /api/analyze` — `{ url, platform }` → clips + scores
+- `POST /api/auto-short` — plan best clip + packaging
+- `POST /api/auto-short/render` — plan + submit render job
+- `POST /api/render` — submit clip render job
+- `GET /api/render/status/[jobId]` — job status
+- `GET /api/health` — health check
