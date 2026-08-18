@@ -6,7 +6,12 @@ import type { TranscriptSegment } from '@/lib/analysis/types';
  */
 export async function fetchYouTubeCaptions(videoId: string): Promise<TranscriptSegment[]> {
   const listUrl = `https://www.youtube.com/api/timedtext?type=list&v=${encodeURIComponent(videoId)}`;
-  const listRes = await fetch(listUrl, { cache: 'no-store' });
+  const headers = {
+    'user-agent':
+      'Mozilla/5.0 (compatible; ShortForge/0.3; +https://github.com/amineadd19-a11y/ShortForge)',
+    accept: 'application/xml,text/xml,*/*',
+  };
+  const listRes = await fetch(listUrl, { cache: 'no-store', headers });
   if (!listRes.ok) return [];
 
   const listXml = await listRes.text();
@@ -30,7 +35,7 @@ export async function fetchYouTubeCaptions(videoId: string): Promise<TranscriptS
   captionUrl.searchParams.set('fmt', 'srv3');
   if (preferred.name) captionUrl.searchParams.set('name', preferred.name);
 
-  const captionRes = await fetch(captionUrl.toString(), { cache: 'no-store' });
+  const captionRes = await fetch(captionUrl.toString(), { cache: 'no-store', headers });
   if (!captionRes.ok) return [];
   const xml = await captionRes.text();
   return parseSrv3(xml);
@@ -68,7 +73,6 @@ function parseSrv3(xml: string): TranscriptSegment[] {
     });
   }
 
-  // Fallback: simple <text start="" dur=""> format
   if (!segments.length) {
     for (const match of xml.matchAll(/<text start="([\d.]+)"[^>]*dur="([\d.]+)"[^>]*>([\s\S]*?)<\/text>/g)) {
       const text = decodeEntities(match[3]);
