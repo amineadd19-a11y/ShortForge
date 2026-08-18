@@ -3,6 +3,8 @@
 import { useMemo, useState } from 'react';
 import { getYouTubeVideoId } from '@/lib/video/url';
 import { RenderStatus } from '@/components/render-status';
+import { ExportPackagePanel } from '@/components/export-package';
+import { buildExportPackage, type ExportPackage } from '@/lib/viral/package';
 
 type Platform = 'youtube' | 'tiktok' | 'reels';
 
@@ -13,6 +15,7 @@ type Analysis = {
     title?: string;
     author?: string;
     thumbnailUrl?: string;
+    url?: string;
   };
   transcript: { status: string; message?: string; provider?: string };
   clips: Array<{
@@ -21,6 +24,7 @@ type Analysis = {
     end: number;
     title: string;
     hook: string;
+    transcript?: string;
     scores?: {
       hook: number;
       clarity: number;
@@ -58,6 +62,22 @@ export default function Home() {
     () => analysis?.clips.find((c) => c.id === selectedClip) ?? null,
     [analysis, selectedClip],
   );
+
+  const exportPkg: ExportPackage | null = useMemo(() => {
+    if (!analysis || !selected) return null;
+    return buildExportPackage({
+      platform,
+      title: selected.title,
+      hook: selected.hook,
+      transcript: selected.transcript,
+      durationSeconds: selected.end - selected.start,
+      score: selected.scoresByPlatform[platform],
+      scoreExplanation: selected.scoreReasons,
+      sourceTitle: analysis.source.title,
+      sourceCreator: analysis.source.author,
+      sourceUrl: analysis.source.url || url,
+    });
+  }, [analysis, selected, platform, url]);
 
   const submit = async () => {
     setError('');
@@ -164,6 +184,7 @@ export default function Home() {
             {platforms.map(([id, name]) => (
               <button
                 key={id}
+                type="button"
                 onClick={() => setPlatform(id)}
                 className={`rounded-full border px-4 py-2 text-xs font-semibold transition ${
                   platform === id
@@ -187,6 +208,7 @@ export default function Home() {
                 className="min-h-14 flex-1 rounded-xl bg-transparent px-4 text-sm outline-none placeholder:text-white/25"
               />
               <button
+                type="button"
                 disabled={loading || auto}
                 onClick={submit}
                 className="min-h-14 rounded-xl border border-white/10 bg-white/10 px-5 text-sm font-bold disabled:opacity-60"
@@ -194,6 +216,7 @@ export default function Home() {
                 {loading ? 'Analyzing…' : 'Analyze'}
               </button>
               <button
+                type="button"
                 disabled={loading || auto}
                 onClick={generateAuto}
                 className="min-h-14 rounded-xl bg-white px-7 text-sm font-black text-black disabled:opacity-60"
@@ -262,6 +285,9 @@ export default function Home() {
                       <article
                         key={clip.id}
                         onClick={() => setSelectedClip(clip.id)}
+                        onKeyDown={(e) => e.key === 'Enter' && setSelectedClip(clip.id)}
+                        role="button"
+                        tabIndex={0}
                         className={`cursor-pointer rounded-2xl border p-5 transition ${
                           selectedClip === clip.id
                             ? 'border-white/40 bg-white/[.09]'
@@ -309,6 +335,12 @@ export default function Home() {
               </div>
             </div>
 
+            {exportPkg && (
+              <div className="mt-8">
+                <ExportPackagePanel pkg={exportPkg} />
+              </div>
+            )}
+
             {selected && (
               <div className="sticky bottom-5 mt-8 flex flex-col gap-4 rounded-2xl border border-white/10 bg-black/90 p-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -319,6 +351,7 @@ export default function Home() {
                   </p>
                 </div>
                 <button
+                  type="button"
                   disabled={rendering}
                   onClick={generate}
                   className="rounded-xl bg-white px-6 py-3 text-sm font-bold text-black disabled:opacity-60"
