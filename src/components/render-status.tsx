@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 
 type Result = {
   status: 'queued' | 'processing' | 'completed' | 'failed';
+  progress?: number;
   outputUrl?: string;
   error?: string;
   transcriptStatus?: string;
@@ -11,7 +12,7 @@ type Result = {
 };
 
 export function RenderStatus({ jobId }: { jobId: string }) {
-  const [result, setResult] = useState<Result>({ status: 'queued' });
+  const [result, setResult] = useState<Result>({ status: 'queued', progress: 0 });
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -54,7 +55,7 @@ export function RenderStatus({ jobId }: { jobId: string }) {
   if (result.status === 'completed' && result.outputUrl) {
     return (
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-emerald-200">Render completed.</p>
+        <p className="text-sm text-emerald-200">Render completed — MP4 ready.</p>
         <a
           href={result.outputUrl}
           className="inline-flex rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black"
@@ -69,21 +70,27 @@ export function RenderStatus({ jobId }: { jobId: string }) {
 
   if (result.status === 'failed') {
     return (
-      <p className="text-sm text-rose-300">
-        Render failed: {result.error ?? 'Unknown error.'}
-      </p>
+      <p className="text-sm text-rose-300">Render failed: {result.error ?? 'Unknown error.'}</p>
     );
   }
 
+  const progress = Math.max(0, Math.min(100, Number(result.progress) || 0));
+
   return (
-    <div className="space-y-1">
+    <div className="space-y-3">
       <p className="text-sm text-slate-300">
         {result.status === 'processing' ? 'Rendering your Short…' : 'Render job queued…'}
       </p>
+      <div className="h-2 overflow-hidden rounded-full bg-white/10">
+        <div
+          className="h-full rounded-full bg-white transition-all duration-500"
+          style={{ width: `${progress || (result.status === 'processing' ? 15 : 5)}%` }}
+        />
+      </div>
       <p className="text-xs text-white/35">
-        {[result.transcriptStatus && `transcript: ${result.transcriptStatus}`, result.cropStatus && `crop: ${result.cropStatus}`]
+        {[`progress ${progress}%`, result.transcriptStatus && `transcript: ${result.transcriptStatus}`, result.cropStatus && `crop: ${result.cropStatus}`]
           .filter(Boolean)
-          .join(' · ') || `job ${jobId.slice(0, 8)}…`}
+          .join(' · ')}
       </p>
     </div>
   );
