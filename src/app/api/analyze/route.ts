@@ -13,7 +13,9 @@ const requestSchema = z.object({
 export async function POST(request: Request) {
   try {
     const parsed = requestSchema.safeParse(await request.json());
-    if (!parsed.success) return NextResponse.json({ error: 'A valid YouTube URL is required.' }, { status: 400 });
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'A valid YouTube URL is required.' }, { status: 400 });
+    }
 
     const videoId = getYouTubeVideoId(parsed.data.url);
     if (!videoId) return NextResponse.json({ error: 'Invalid YouTube URL.' }, { status: 400 });
@@ -22,12 +24,26 @@ export async function POST(request: Request) {
     const transcript = await getTranscript(videoId);
     const result = buildAnalysis(source, transcript.segments, parsed.data.platform);
 
-    return NextResponse.json({
-      status: transcript.status === 'ready' ? 'complete' : 'needs_transcript_provider',
-      ...result,
-      transcript: { ...result.transcript, message: transcript.message },
-      pipeline: ['source validation', 'metadata enrichment', 'transcript acquisition', 'moment detection', 'platform scoring', 'render planning'],
-    }, { status: 200 });
+    return NextResponse.json(
+      {
+        status: transcript.status === 'ready' ? 'complete' : 'needs_transcript',
+        ...result,
+        transcript: {
+          ...result.transcript,
+          message: transcript.message,
+          provider: transcript.provider,
+        },
+        pipeline: [
+          'source validation',
+          'metadata enrichment',
+          'transcript acquisition',
+          'moment detection',
+          'platform scoring',
+          'render planning',
+        ],
+      },
+      { status: 200 },
+    );
   } catch {
     return NextResponse.json({ error: 'Unable to analyze this video right now.' }, { status: 500 });
   }
