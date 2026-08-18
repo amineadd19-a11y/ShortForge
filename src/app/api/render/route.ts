@@ -1,26 +1,45 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { getYouTubeVideoId } from '@/lib/video/url';
 import { createRenderPlan } from '@/lib/render/plan';
 import { createRenderWorker } from '@/lib/render/worker';
-import type { Platform } from '@/lib/ai/scoring';
 
-const platforms = new Set<Platform>(['youtube', 'tiktok', 'reels']);
+const schema = z.object({
+  url: z.string().url().max(500),
+  start: z.number().finite().min(0).max(86_400),
+  end: z.number().finite().min(0).max(86_400),
+  platform: z.enum(['youtube', 'tiktok', 'reels']),
+});
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json() as { url?: unknown; start?: unknown; end?: unknown; platform?: unknown };
-    if (typeof body.url !== 'string') return NextResponse.json({ error: 'A YouTube URL is required.' }, { status: 400 });
-    const videoId = getYouTubeVideoId(body.url);
-    if (!videoId) return NextResponse.json({ error: 'Invalid YouTube URL.' }, { status: 400 });
-    if (typeof body.start !== 'number' || typeof body.end !== 'number') return NextResponse.json({ error: 'A valid clip range is required.' }, { status: 400 });
-    if (typeof body.platform !== 'string' || !platforms.has(body.platform as Platform)) return NextResponse.json({ error: 'Unsupported platform.' }, { status: 400 });
+    const body = await request.json().catch(() => null);
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid render request.' }, { status: 400 });
+    }
 
-    const plan = createRenderPlan(body.platform as Platform, body.start, body.end);
+    const videoId = getYouTubeVideoId(parsed.data.url);
+    if (!videoId) {
+      return NextResponse.json({ error: 'Invalid YouTube URL.' }, { status: 400 });
+    }
+
+    if (parsed.data.end <= parsed.data.start) {
+      return NextResponse.json({ error: 'Clip end must be after start.' }, { status: 400 });
+    }
+
+    const plan = createRenderPlan(parsed.data.platform, parsed.data.start, parsed.data.end);
     const worker = createRenderWorker();
-    const job = await worker.submit({ sourceUrl: `https://www.youtube.com/watch?v=${videoId}`, plan });
+    const job = await worker.submit({
+      sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
+      plan,
+    });
+
     return NextResponse.json({ ...job, videoId, plan }, { status: 202 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Render request failed.';
-    return NextResponse.json({ error: message }, { status: 503 });
+    const status =
+      message.includes('not configured') || message.includes('Unauthorized') ? 503 : 503;
+    return NextResponse.json({ error: message }, { status });
   }
 }
