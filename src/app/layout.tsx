@@ -3,15 +3,15 @@ import type { Metadata } from 'next';
 import { AuthNav } from '@/components/auth-nav';
 
 export const metadata: Metadata = {
-  title: 'ShortForge AI — Turn long videos into better shorts',
-  description: 'AI-assisted short-form video research, clipping and platform optimization.',
+  title: 'ShortForge AI — AI-powered short-form studio',
+  description: 'Turn long-form YouTube videos into research-backed Shorts, TikToks and Reels.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <div className="fixed right-5 top-5 z-40 flex items-center gap-2">
+        <div className="fixed right-4 top-4 z-50 flex items-center gap-2 sm:right-6 sm:top-5">
           <AuthNav />
         </div>
         {children}
