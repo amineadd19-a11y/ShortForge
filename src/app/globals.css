@@ -2,8 +2,43 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: dark; }
+:root {
+  color-scheme: dark;
+  --sf-bg: #06070a;
+  --sf-panel: rgba(15, 17, 23, 0.78);
+  --sf-border: rgba(255, 255, 255, 0.09);
+  --sf-muted: rgba(236, 240, 255, 0.55);
+  --sf-accent: #8b5cf6;
+}
+
 * { box-sizing: border-box; }
 html, body { min-height: 100%; }
-body { margin: 0; background: #070912; color: #f5f7fb; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 50% -10%, rgba(124, 58, 237, 0.18), transparent 32rem),
+    radial-gradient(circle at 90% 25%, rgba(59, 130, 246, 0.08), transparent 24rem),
+    var(--sf-bg);
+  color: #f5f7fb;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
 button, input { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+::selection { background: rgba(139, 92, 246, 0.35); color: white; }
+
+@layer components {
+  .sf-glass {
+    border: 1px solid var(--sf-border);
+    background: var(--sf-panel);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
+    backdrop-filter: blur(18px);
+  }
+
+  .sf-grid {
+    background-image: linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: linear-gradient(to bottom, black, transparent 75%);
+  }
+}
