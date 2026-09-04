@@ -1,6 +1,7 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import { AuthNav } from '@/components/auth-nav';
+import { TikTokPublisher } from '@/components/tiktok-publisher';
 
 export const metadata: Metadata = {
   title: 'ShortForge AI — AI-powered short-form studio',
@@ -15,6 +16,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <AuthNav />
         </div>
         {children}
+        <div className="mx-auto w-full max-w-6xl px-4 pb-10 sm:px-6">
+          <TikTokPublisher />
+        </div>
       </body>
     </html>
   );
