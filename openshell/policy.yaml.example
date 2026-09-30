@@ -39,11 +39,18 @@ network_policies:
         protocol: rest
         enforcement: enforce
         access: read-only
+      # yt-dlp may POST to the YouTube player API. Keep this scoped to the API host.
       - host: youtubei.googleapis.com
         port: 443
         protocol: rest
         enforcement: enforce
-        access: read-only
+        rules:
+          - allow:
+              method: POST
+              path: /youtubei/v1/**
+          - allow:
+              method: GET
+              path: /youtubei/v1/**
       - host: "**.googlevideo.com"
         port: 443
         protocol: rest
