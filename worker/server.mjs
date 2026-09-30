@@ -281,7 +281,7 @@ async function processJob(job) {
     job.progress = 35;
 
     job.transcriptStatus = 'processing';
-    const captions = await transcribeWithWhisper(input);
+    const captions = await transcribeWithWhisper(input, controller.signal);
     job.transcriptStatus = 'ready';
     job.captions = captions;
     job.progress = 50;
@@ -316,7 +316,7 @@ async function processJob(job) {
     job.progress = 100;
     job.status = 'completed';
   } catch (e) {
-    job.status = 'failed';
+    job.status = controller.signal.aborted && job.status === 'cancelling' ? 'cancelled' : 'failed';
     job.error = e instanceof Error ? e.message : 'Render failed.';
   } finally {
     clearTimeout(watchdog);
@@ -354,7 +354,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (
-      (req.method === 'POST' && u.pathname === '/jobs') ||
+      (req.method === 'POST' && (u.pathname === '/jobs' || /^\/jobs\/[^/]+\/cancel$/.test(u.pathname))) ||
       (req.method === 'GET' && /^\/jobs\//.test(u.pathname))
     ) {
       if (!authorized(req)) return json(res, 401, { error: 'Unauthorized.' });
