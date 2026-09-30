@@ -31,7 +31,7 @@ export function RenderStatus({ jobId }: { jobId: string }) {
         }
         setError('');
         setResult(data);
-        if (data.status === 'queued' || data.status === 'processing') {
+        if (data.status === 'queued' || data.status === 'processing' || data.status === 'cancelling') {
           window.setTimeout(poll, 2000);
         }
       } catch {
@@ -95,7 +95,7 @@ export function RenderStatus({ jobId }: { jobId: string }) {
   return (
     <div className="space-y-3">
       <p className="text-sm text-slate-300">
-        {result.status === 'processing' ? 'Rendering your Short…' : 'Render job queued…'}
+        {result.status === 'processing' ? 'Rendering your Short…' : result.status === 'cancelling' ? 'Cancelling render…' : 'Render job queued…'}
       </p>
       <div className="h-2 overflow-hidden rounded-full bg-white/10">
         <div
