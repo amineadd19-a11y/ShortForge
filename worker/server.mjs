@@ -13,6 +13,7 @@ import { buildDynamicCropFilter } from './dynamic-crop.mjs';
 import { writeAssCaptions } from './captions.mjs';
 
 const PORT = Number(process.env.PORT || 8787);
+const HOST = process.env.BIND_HOST || '0.0.0.0';
 const WORK_DIR = process.env.WORK_DIR || '/tmp/shortforge';
 const MAX_BODY = 64 * 1024;
 const MAX_DURATION = 180;
@@ -393,4 +394,4 @@ const server = http.createServer(async (req, res) => {
 });
 
 await mkdir(WORK_DIR, { recursive: true });
-server.listen(PORT, () => console.log(`ShortForge render worker listening on ${PORT}`));
+server.listen(PORT, HOST, () => console.log(`ShortForge render worker listening on ${HOST}:${PORT}`));
