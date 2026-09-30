@@ -22,7 +22,9 @@ const JOB_TIMEOUT_MS = Math.max(60_000, Number(process.env.JOB_TIMEOUT_MS || 600
 const WORKER_TOKEN = process.env.RENDER_WORKER_TOKEN?.trim() || '';
 const bucket = process.env.S3_BUCKET?.trim();
 const jobs = new Map();
+const jobControllers = new Map();
 let activeJobs = 0;
+const JOB_RETENTION_MS = Math.max(10 * 60_000, Number(process.env.JOB_RETENTION_MS || 3_600_000));
 
 const s3 = bucket
   ? new S3Client({
@@ -72,35 +74,50 @@ function youtubeUrl(v) {
   }
 }
 
-function run(cmd, args, timeoutMs = 300_000) {
+function run(cmd, args, timeoutMs = 300_000, signal) {
   return new Promise((resolve, reject) => {
-    const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], detached: true });
     let out = '';
     let err = '';
+    let settled = false;
+
+    const killTree = () => {
+      try { process.kill(-p.pid, 'SIGKILL'); }
+      catch { try { p.kill('SIGKILL'); } catch {} }
+    };
+    const onAbort = () => {
+      killTree();
+      finish(reject, new Error(`${cmd} cancelled.`));
+    };
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      fn(value);
+    };
     const timer = setTimeout(() => {
-      p.kill('SIGKILL');
-      reject(new Error(`${cmd} timed out after ${timeoutMs}ms`));
+      killTree();
+      finish(reject, new Error(`${cmd} timed out after ${timeoutMs}ms`));
     }, timeoutMs);
-    p.stdout.on('data', (c) => {
-      out += c;
-    });
+
+    if (signal?.aborted) return onAbort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    p.stdout.on('data', (c) => { out += c; });
     p.stderr.on('data', (c) => {
       err += c;
       if (err.length > 8000) err = err.slice(-8000);
     });
-    p.on('error', (e) => {
-      clearTimeout(timer);
-      reject(e);
-    });
+    p.on('error', (e) => finish(reject, e));
     p.on('close', (code) => {
-      clearTimeout(timer);
-      if (code === 0) resolve(out);
-      else reject(new Error(`${cmd} failed (${code}): ${err.slice(-2500)}`));
+      if (code === 0) finish(resolve, out);
+      else finish(reject, new Error(`${cmd} failed (${code}): ${err.slice(-2500)}`));
     });
   });
 }
 
-async function downloadSource(url, template) {
+async function downloadSource(url, template, signal) {
   // yt-dlp writes to template path; never pass user input as shell.
   await run(
     'yt-dlp',
@@ -117,21 +134,23 @@ async function downloadSource(url, template) {
       url,
     ],
     300_000,
+    signal,
   );
 }
 
-async function probeVideo(input) {
+async function probeVideo(input, signal) {
   const raw = await run(
     'ffprobe',
     ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'json', input],
     30_000,
+    signal,
   );
   const stream = JSON.parse(raw).streams?.[0];
   if (!stream?.width || !stream?.height) throw new Error('Unable to read source video dimensions.');
   return { width: Number(stream.width), height: Number(stream.height) };
 }
 
-async function render(job, input, output, captions, faces, dimensions) {
+async function render(job, input, output, captions, faces, dimensions, signal) {
   const start = Math.max(0, Number(job.plan?.start ?? 0));
   const end = Number(job.plan?.end);
   if (!Number.isFinite(end) || end <= start || end - start > MAX_DURATION) {
@@ -201,6 +220,7 @@ async function render(job, input, output, captions, faces, dimensions) {
         output,
       ],
       JOB_TIMEOUT_MS,
+      signal,
     );
   } finally {
     if (assFile) await unlink(assFile).catch(() => {});
@@ -240,6 +260,8 @@ async function cleanupJobFiles(jobId) {
 
 async function processJob(job) {
   activeJobs += 1;
+  const controller = new AbortController();
+  jobControllers.set(job.id, controller);
   job.status = 'processing';
   job.progress = 5;
   const template = path.join(WORK_DIR, `${job.id}-input.%(ext)s`);
@@ -248,14 +270,14 @@ async function processJob(job) {
 
   const watchdog = setTimeout(() => {
     if (job.status === 'processing') {
-      job.status = 'failed';
       job.error = 'Job timed out.';
+      controller.abort();
     }
-  }, JOB_TIMEOUT_MS + 30_000);
+  }, JOB_TIMEOUT_MS);
 
   try {
     job.progress = 10;
-    await downloadSource(job.sourceUrl, template);
+    await downloadSource(job.sourceUrl, template, controller.signal);
     job.progress = 35;
 
     job.transcriptStatus = 'processing';
@@ -283,11 +305,11 @@ async function processJob(job) {
     job.faces = faces;
     job.progress = 70;
 
-    const dimensions = await probeVideo(input);
+    const dimensions = await probeVideo(input, controller.signal);
     job.cropStatus = 'ready';
     job.progress = 75;
 
-    await render(job, input, output, captions, faces, dimensions);
+    await render(job, input, output, captions, faces, dimensions, controller.signal);
     job.progress = 90;
 
     job.outputUrl = await upload(output, `shorts/${job.id}.mp4`);
@@ -298,7 +320,9 @@ async function processJob(job) {
     job.error = e instanceof Error ? e.message : 'Render failed.';
   } finally {
     clearTimeout(watchdog);
+    jobControllers.delete(job.id);
     activeJobs = Math.max(0, activeJobs - 1);
+    setTimeout(() => jobs.delete(job.id), JOB_RETENTION_MS).unref();
     await cleanupJobFiles(job.id);
   }
 }
@@ -369,6 +393,21 @@ const server = http.createServer(async (req, res) => {
       jobs.set(id, job);
       void processJob(job);
       return json(res, 202, { jobId: id, status: 'queued' });
+    }
+
+    const cancelMatch = u.pathname.match(/^\/jobs\/([^/]+)\/cancel$/);
+    if (req.method === 'POST' && cancelMatch) {
+      const j = jobs.get(cancelMatch[1]);
+      if (!j) return json(res, 404, { error: 'Job not found.' });
+      if (['completed', 'failed', 'cancelled'].includes(j.status)) {
+        return json(res, 409, { error: 'Job is already finished.', status: j.status });
+      }
+      const controller = jobControllers.get(j.id);
+      if (!controller) return json(res, 409, { error: 'Job is not currently running.' });
+      j.status = 'cancelling';
+      j.error = 'Cancellation requested.';
+      controller.abort();
+      return json(res, 202, { jobId: j.id, status: 'cancelling' });
     }
 
     const m = u.pathname.match(/^\/jobs\/([^/]+)$/);
