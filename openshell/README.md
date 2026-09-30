@@ -82,3 +82,18 @@ Do not point Vercel directly at an unauthenticated OpenShell gateway service URL
 ## Important limitation
 
 YouTube delivery hosts are dynamic. The policy allows **.googlevideo.com for the media CDN because exact CDN hostnames vary per download. Keep this permission attached only to yt-dlp/python3 and monitor OpenShell logs. Tighten it if the downloader can later use a smaller stable endpoint set.
+
+
+## Render job contract
+
+The worker accepts an optional `Idempotency-Key` header (or `idempotencyKey` JSON field), 8–128 characters using `A-Z a-z 0-9 . _ : -`. Repeating the same key while the job is retained returns the existing `jobId` instead of starting a duplicate download/render.
+
+Use a stable application-generated key for each logical render request, for example a database render-job ID. Do not derive the key from an untrusted source URL alone.
+
+Cancellation:
+
+    POST /jobs/<jobId>/cancel
+
+The cancellation request is authenticated with `RENDER_WORKER_TOKEN` and terminates the active subprocess tree. Timeouts use the same abort path.
+
+OpenShell remains the execution boundary: filesystem and network permissions are enforced by policy outside the worker process. This matches OpenShell's deny-by-default sandbox model and its service-exposure architecture.
