@@ -1,7 +1,7 @@
 import type { RenderPlan } from './plan';
 
 export type RenderJob = { sourceUrl: string; plan: RenderPlan; idempotencyKey?: string };
-export type RenderStatus = RenderJobResult['status'] | 'cancelling' | 'cancelled';
+export type RenderStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'cancelling' | 'cancelled';
 export type RenderJobResult = {
   jobId: string;
   status: RenderStatus;
