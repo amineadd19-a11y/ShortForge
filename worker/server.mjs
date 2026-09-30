@@ -23,6 +23,7 @@ const WORKER_TOKEN = process.env.RENDER_WORKER_TOKEN?.trim() || '';
 const bucket = process.env.S3_BUCKET?.trim();
 const jobs = new Map();
 const jobControllers = new Map();
+const idempotencyJobs = new Map();
 let activeJobs = 0;
 const JOB_RETENTION_MS = Math.max(10 * 60_000, Number(process.env.JOB_RETENTION_MS || 3_600_000));
 
@@ -322,7 +323,12 @@ async function processJob(job) {
     clearTimeout(watchdog);
     jobControllers.delete(job.id);
     activeJobs = Math.max(0, activeJobs - 1);
-    setTimeout(() => jobs.delete(job.id), JOB_RETENTION_MS).unref();
+    setTimeout(() => {
+      jobs.delete(job.id);
+      if (job.idempotencyKey && idempotencyJobs.get(job.idempotencyKey) === job.id) {
+        idempotencyJobs.delete(job.idempotencyKey);
+      }
+    }, JOB_RETENTION_MS).unref();
     await cleanupJobFiles(job.id);
   }
 }
@@ -368,6 +374,18 @@ const server = http.createServer(async (req, res) => {
       }
 
       const x = await readBody(req);
+      const idempotencyKey = String(x.idempotencyKey || req.headers['idempotency-key'] || '').trim();
+      if (idempotencyKey && !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
+        return json(res, 400, { error: 'Invalid idempotency key.' });
+      }
+      if (idempotencyKey) {
+        const existingId = idempotencyJobs.get(idempotencyKey);
+        const existing = existingId ? jobs.get(existingId) : null;
+        if (existing) {
+          return json(res, 200, { jobId: existing.id, status: existing.status, idempotent: true });
+        }
+        if (existingId) idempotencyJobs.delete(idempotencyKey);
+      }
       if (!youtubeUrl(x.sourceUrl)) {
         return json(res, 400, { error: 'A valid YouTube HTTPS URL is required.' });
       }
@@ -381,6 +399,7 @@ const server = http.createServer(async (req, res) => {
       const id = randomUUID();
       const job = {
         id,
+        idempotencyKey: idempotencyKey || null,
         sourceUrl: x.sourceUrl,
         plan: x.plan,
         status: 'queued',
@@ -391,8 +410,9 @@ const server = http.createServer(async (req, res) => {
         createdAt: new Date().toISOString(),
       };
       jobs.set(id, job);
+      if (idempotencyKey) idempotencyJobs.set(idempotencyKey, id);
       void processJob(job);
-      return json(res, 202, { jobId: id, status: 'queued' });
+      return json(res, 202, { jobId: id, status: 'queued', idempotent: Boolean(idempotencyKey) });
     }
 
     const cancelMatch = u.pathname.match(/^\/jobs\/([^/]+)\/cancel$/);
@@ -422,6 +442,7 @@ const server = http.createServer(async (req, res) => {
         cropStatus: j.cropStatus,
         faceTrackingStatus: j.faceTrackingStatus,
         outputUrl: j.outputUrl,
+        createdAt: j.createdAt,
         error: j.error,
       });
     }
