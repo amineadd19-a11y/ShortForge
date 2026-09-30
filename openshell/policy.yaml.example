@@ -1,0 +1,67 @@
+# ShortForge render-worker policy for NVIDIA OpenShell 0.1.x
+# Replace __S3_HOST__ with the exact S3/R2/MinIO hostname.
+version: 1
+
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /usr
+    - /lib
+    - /lib64
+    - /etc
+    - /proc
+    - /dev/urandom
+    - /app
+    - /var
+  read_write:
+    - /tmp
+    - /dev/null
+
+landlock:
+  compatibility: hard_requirement
+
+network_policies:
+  youtube:
+    name: shortforge-youtube-read
+    endpoints:
+      - host: www.youtube.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-only
+      - host: youtube.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-only
+      - host: youtu.be
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-only
+      - host: youtubei.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-only
+      - host: "**.googlevideo.com"
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-only
+    binaries:
+      - path: /usr/local/bin/yt-dlp
+      - path: /usr/bin/python3
+
+  object_storage:
+    name: shortforge-object-storage
+    endpoints:
+      - host: __S3_HOST__
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-write
+    binaries:
+      - path: /usr/bin/node
+
+# No network permission is granted to ffmpeg or arbitrary processes.
