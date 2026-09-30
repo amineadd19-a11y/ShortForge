@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getYouTubeVideoId } from '@/lib/video/url';
@@ -29,10 +30,14 @@ export async function POST(request: Request) {
     }
 
     const plan = createRenderPlan(parsed.data.platform, parsed.data.start, parsed.data.end);
+    const idempotencyKey = createHash('sha256')
+      .update(JSON.stringify({ videoId, platform: parsed.data.platform, start: plan.start, end: plan.end }))
+      .digest('hex');
     const worker = createRenderWorker();
     const job = await worker.submit({
       sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
       plan,
+      idempotencyKey,
     });
 
     return NextResponse.json({ ...job, videoId, plan }, { status: 202 });

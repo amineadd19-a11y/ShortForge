@@ -9,6 +9,7 @@ services:
       - .env
     environment:
       PORT: 8787
+      BIND_HOST: 0.0.0.0
       WORK_DIR: /tmp/shortforge
     volumes:
       - worker-tmp:/tmp/shortforge
