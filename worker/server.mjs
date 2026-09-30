@@ -108,7 +108,7 @@ async function downloadSource(url, template) {
       '--no-playlist',
       '--no-warnings',
       '--format',
-      'bv*[height<=1080]+ba/b[height<=1080]/
+      'bv*[height<=1080]+ba/b[height<=1080]',
       '--merge-output-format',
       'mp4',
       '--output',
