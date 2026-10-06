@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { mkdir, stat, unlink, writeFile, readdir } from 'node:fs/promises';
+import { mkdir, stat, unlink, readdir } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
@@ -49,7 +49,15 @@ function json(res, status, body) {
 function authorized(req) {
   if (!WORKER_TOKEN) return false;
   const value = req.headers.authorization || '';
-  return value === `Bearer ${WORKER_TOKEN}`;
+  const expected = `Bearer ${WORKER_TOKEN}`;
+  if (value.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i += 1) diff |= value.charCodeAt(i) ^ expected.charCodeAt(i);
+  return diff === 0;
+}
+
+function assertNotAborted(signal) {
+  if (signal?.aborted) throw new Error('Job cancelled.');
 }
 
 async function readBody(req) {
@@ -63,16 +71,31 @@ async function readBody(req) {
   return JSON.parse(text || '{}');
 }
 
-function youtubeUrl(v) {
+function youtubeVideoId(v) {
   try {
+    if (typeof v !== 'string' || v.length > 2048) return null;
     const u = new URL(v);
-    return (
-      u.protocol === 'https:' &&
-      ['youtube.com', 'www.youtube.com', 'youtu.be', 'm.youtube.com'].includes(u.hostname)
-    );
+    if (u.protocol !== 'https:' || u.username || u.password) return null;
+    const host = u.hostname.toLowerCase();
+    if (host === 'youtu.be') {
+      const id = u.pathname.split('/').filter(Boolean);
+      return id.length === 1 && /^[A-Za-z0-9_-]{11}$/.test(id[0]) ? id[0] : null;
+    }
+    if (!['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com'].includes(host)) return null;
+    const parts = u.pathname.split('/').filter(Boolean);
+    let id = null;
+    if (u.pathname === '/watch') id = u.searchParams.get('v');
+    else if (['shorts', 'embed', 'live'].includes(parts[0]) && parts[1]) id = parts[1];
+    if (!id || !/^[A-Za-z0-9_-]{11}$/.test(id)) return null;
+    if (u.searchParams.has('list') && !u.searchParams.has('v') && u.pathname !== '/watch') return null;
+    return id;
   } catch {
-    return false;
+    return null;
   }
+}
+
+function youtubeUrl(v) {
+  return Boolean(youtubeVideoId(v));
 }
 
 function run(cmd, args, timeoutMs = 300_000, signal) {
@@ -279,10 +302,12 @@ async function processJob(job) {
   try {
     job.progress = 10;
     await downloadSource(job.sourceUrl, template, controller.signal);
+    assertNotAborted(controller.signal);
     job.progress = 35;
 
     job.transcriptStatus = 'processing';
     const captions = await transcribeWithWhisper(input, controller.signal);
+    assertNotAborted(controller.signal);
     job.transcriptStatus = 'ready';
     job.captions = captions;
     job.progress = 50;
@@ -293,6 +318,7 @@ async function processJob(job) {
       job.plan?.start || 0,
       Math.min(MAX_DURATION, (job.plan?.end || 0) - (job.plan?.start || 0)),
     );
+    assertNotAborted(controller.signal);
     job.crop = crop;
     job.progress = 60;
 
@@ -302,23 +328,33 @@ async function processJob(job) {
       job.plan?.start || 0,
       Math.min(MAX_DURATION, (job.plan?.end || 0) - (job.plan?.start || 0)),
     );
+    assertNotAborted(controller.signal);
     job.faceTrackingStatus = faces.enabled ? 'ready' : 'fallback';
     job.faces = faces;
     job.progress = 70;
 
     const dimensions = await probeVideo(input, controller.signal);
+    assertNotAborted(controller.signal);
     job.cropStatus = 'ready';
     job.progress = 75;
 
     await render(job, input, output, captions, faces, dimensions, controller.signal);
+    assertNotAborted(controller.signal);
     job.progress = 90;
 
     job.outputUrl = await upload(output, `shorts/${job.id}.mp4`);
+    assertNotAborted(controller.signal);
     job.progress = 100;
+    job.completedAt = new Date().toISOString();
     job.status = 'completed';
   } catch (e) {
     job.status = controller.signal.aborted && job.status === 'cancelling' ? 'cancelled' : 'failed';
-    job.error = e instanceof Error ? e.message : 'Render failed.';
+    if (job.status === 'cancelled') {
+      job.cancelledAt = new Date().toISOString();
+      job.error = 'Job cancelled.';
+    } else {
+      job.error = e instanceof Error ? e.message : 'Render failed.';
+    }
   } finally {
     clearTimeout(watchdog);
     jobControllers.delete(job.id);
@@ -419,11 +455,14 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && cancelMatch) {
       const j = jobs.get(cancelMatch[1]);
       if (!j) return json(res, 404, { error: 'Job not found.' });
-      if (['completed', 'failed', 'cancelled'].includes(j.status)) {
+      if (['completed', 'failed'].includes(j.status)) {
         return json(res, 409, { error: 'Job is already finished.', status: j.status });
       }
+      if (j.status === 'cancelled' || j.status === 'cancelling') {
+        return json(res, 200, { jobId: j.id, status: j.status, idempotent: true });
+      }
       const controller = jobControllers.get(j.id);
-      if (!controller) return json(res, 409, { error: 'Job is not currently running.' });
+      if (!controller) return json(res, 409, { error: 'Job is not currently cancellable.' });
       j.status = 'cancelling';
       j.error = 'Cancellation requested.';
       controller.abort();
@@ -443,6 +482,8 @@ const server = http.createServer(async (req, res) => {
         faceTrackingStatus: j.faceTrackingStatus,
         outputUrl: j.outputUrl,
         createdAt: j.createdAt,
+        completedAt: j.completedAt,
+        cancelledAt: j.cancelledAt,
         error: j.error,
       });
     }
