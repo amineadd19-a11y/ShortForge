@@ -11,6 +11,7 @@ import { analyzeVerticalCrop } from './reframe.mjs';
 import { detectFaces } from './face-track.mjs';
 import { buildDynamicCropFilter } from './dynamic-crop.mjs';
 import { writeAssCaptions } from './captions.mjs';
+import { transitionJob } from './lifecycle.mjs';
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.BIND_HOST || '0.0.0.0';
@@ -286,7 +287,7 @@ async function processJob(job) {
   activeJobs += 1;
   const controller = new AbortController();
   jobControllers.set(job.id, controller);
-  job.status = 'processing';
+  transitionJob(job, 'running');
   job.progress = 5;
   const template = path.join(WORK_DIR, `${job.id}-input.%(ext)s`);
   const input = path.join(WORK_DIR, `${job.id}-input.mp4`);
@@ -346,9 +347,10 @@ async function processJob(job) {
     assertNotAborted(controller.signal);
     job.progress = 100;
     job.completedAt = new Date().toISOString();
-    job.status = 'completed';
+    transitionJob(job, 'completed');
   } catch (e) {
-    job.status = controller.signal.aborted && job.status === 'cancelling' ? 'cancelled' : 'failed';
+    if (controller.signal.aborted && job.status === 'cancelling') transitionJob(job, 'cancelled');
+    else if (job.status === 'running') transitionJob(job, 'failed');
     if (job.status === 'cancelled') {
       job.cancelledAt = new Date().toISOString();
       job.error = 'Job cancelled.';
@@ -463,7 +465,7 @@ const server = http.createServer(async (req, res) => {
       }
       const controller = jobControllers.get(j.id);
       if (!controller) return json(res, 409, { error: 'Job is not currently cancellable.' });
-      j.status = 'cancelling';
+      transitionJob(j, 'cancelling');
       j.error = 'Cancellation requested.';
       controller.abort();
       return json(res, 202, { jobId: j.id, status: 'cancelling' });
