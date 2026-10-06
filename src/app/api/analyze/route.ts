@@ -31,6 +31,7 @@ export async function POST(request: Request) {
         transcript: {
           ...result.transcript,
           message: transcript.message,
+          reason: transcript.reason,
           provider: transcript.provider,
         },
         pipeline: [

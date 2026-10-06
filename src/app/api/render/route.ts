@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getYouTubeVideoId } from '@/lib/video/url';
@@ -5,9 +6,9 @@ import { createRenderPlan } from '@/lib/render/plan';
 import { createRenderWorker } from '@/lib/render/worker';
 
 const schema = z.object({
-  url: z.string().url().max(500),
-  start: z.number().finite().min(0).max(86_400),
-  end: z.number().finite().min(0).max(86_400),
+  url: z.string().trim().max(2048),
+  start: z.number().finite().min(0).max(180),
+  end: z.number().finite().min(0).max(180),
   platform: z.enum(['youtube', 'tiktok', 'reels']),
 });
 
@@ -28,18 +29,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Clip end must be after start.' }, { status: 400 });
     }
 
+    if (parsed.data.end - parsed.data.start > 180) {
+      return NextResponse.json({ error: 'Clip duration cannot exceed 180 seconds.' }, { status: 400 });
+    }
+
     const plan = createRenderPlan(parsed.data.platform, parsed.data.start, parsed.data.end);
-    const worker = createRenderWorker();
-    const job = await worker.submit({
+    const idempotencyKey = createHash('sha256')
+      .update(JSON.stringify({ videoId, platform: parsed.data.platform, start: plan.start, end: plan.end }))
+      .digest('hex');
+
+    const job = await createRenderWorker().submit({
       sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
       plan,
+      idempotencyKey,
     });
 
     return NextResponse.json({ ...job, videoId, plan }, { status: 202 });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Render request failed.';
-    const status =
-      message.includes('not configured') || message.includes('Unauthorized') ? 503 : 503;
-    return NextResponse.json({ error: message }, { status });
+  } catch {
+    return NextResponse.json(
+      { error: { code: 'RENDER_UNAVAILABLE', message: 'Rendering is temporarily unavailable.' } },
+      { status: 503 },
+    );
   }
 }

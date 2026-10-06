@@ -1,9 +1,10 @@
 import type { RenderPlan } from './plan';
 
-export type RenderJob = { sourceUrl: string; plan: RenderPlan };
+export type RenderJob = { sourceUrl: string; plan: RenderPlan; idempotencyKey?: string };
+export type RenderStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelling' | 'cancelled';
 export type RenderJobResult = {
   jobId: string;
-  status: 'queued' | 'processing' | 'completed' | 'failed';
+  status: RenderStatus;
   progress?: number;
   outputUrl?: string;
   error?: string;
@@ -14,6 +15,7 @@ export type RenderJobResult = {
 export interface RenderWorker {
   submit(job: RenderJob): Promise<Pick<RenderJobResult, 'jobId' | 'status'>>;
   status(jobId: string): Promise<RenderJobResult>;
+  cancel(jobId: string): Promise<Pick<RenderJobResult, 'jobId' | 'status'>>;
 }
 
 function baseUrl() {
@@ -63,17 +65,26 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
 
 export class HttpRenderWorker implements RenderWorker {
   submit(job: RenderJob) {
+    const headers: HeadersInit = {};
+    if (job.idempotencyKey) headers['Idempotency-Key'] = job.idempotencyKey;
     return request<Pick<RenderJobResult, 'jobId' | 'status'>>('/jobs', {
       method: 'POST',
-      body: JSON.stringify(job),
+      headers,
+      body: JSON.stringify({ sourceUrl: job.sourceUrl, plan: job.plan, idempotencyKey: job.idempotencyKey }),
     });
   }
   status(jobId: string) {
-    if (!jobId.trim() || !/^[a-zA-Z0-9_-]+$/.test(jobId)) {
-      throw new Error('Render job id is required.');
-    }
+    validateJobId(jobId);
     return request<RenderJobResult>(`/jobs/${encodeURIComponent(jobId)}`, { method: 'GET' });
   }
+  cancel(jobId: string) {
+    validateJobId(jobId);
+    return request<Pick<RenderJobResult, 'jobId' | 'status'>>(`/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' });
+  }
+}
+
+function validateJobId(jobId: string) {
+  if (!jobId.trim() || !/^[a-zA-Z0-9_-]+$/.test(jobId)) throw new Error('Render job id is required.');
 }
 
 export class MissingRenderWorker implements RenderWorker {
@@ -81,6 +92,9 @@ export class MissingRenderWorker implements RenderWorker {
     throw new Error('RENDER_WORKER_URL is not configured.');
   }
   async status(_jobId: string): Promise<never> {
+    throw new Error('RENDER_WORKER_URL is not configured.');
+  }
+  async cancel(_jobId: string): Promise<never> {
     throw new Error('RENDER_WORKER_URL is not configured.');
   }
 }

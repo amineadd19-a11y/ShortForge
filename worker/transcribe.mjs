@@ -1,23 +1,69 @@
 import { spawn } from 'node:child_process';
 
-function runPython(inputPath) {
+function runPython(inputPath, signal) {
   return new Promise((resolve, reject) => {
-    const child = spawn('python', ['transcribe.py', inputPath], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('python', ['transcribe.py', inputPath], { stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', onAbort);
+      fn(value);
+    };
+    const killTree = () => {
+      try { process.kill(-child.pid, 'SIGKILL'); } catch { try { child.kill('SIGKILL'); } catch {} }
+    };
+    const onAbort = () => { killTree(); finish(reject, new Error('Transcription cancelled.')); };
     let out = ''; let err = '';
-    child.stdout.on('data', chunk => { out += chunk; });
-    child.stderr.on('data', chunk => { err += chunk; });
-    child.on('error', reject);
-    child.on('close', code => code === 0 ? resolve(out) : reject(new Error(`faster-whisper failed (${code}): ${err.slice(-3000)}`)));
+    child.stdout.on('data', chunk => {
+      out += chunk;
+      if (out.length > 2_000_000) {
+        killTree();
+        finish(reject, new Error('Transcription output exceeded the safety limit.'));
+      }
+    });
+    child.stderr.on('data', chunk => {
+      err += chunk;
+      if (err.length > 8_000) err = err.slice(-8_000);
+    });
+    if (signal?.aborted) return onAbort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    const timer = setTimeout(() => {
+      killTree();
+      finish(reject, new Error('Transcription timed out.'));
+    }, 300_000);
+    const originalFinish = finish;
+    child.on('error', e => originalFinish(reject, e));
+    child.on('close', code => code === 0
+      ? originalFinish(resolve, out)
+      : originalFinish(reject, new Error(`faster-whisper failed (${code}): ${err.slice(-3000)}`)));
+    const clear = () => clearTimeout(timer);
+    child.once('close', clear);
+    child.once('error', clear);
   });
 }
 
-export async function transcribeWithWhisper(inputPath) {
-  const raw = await runPython(inputPath);
-  const data = JSON.parse(raw);
+export async function transcribeWithWhisper(inputPath, signal) {
+  const raw = await runPython(inputPath, signal);
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error('Transcription returned malformed JSON.');
+  }
+  if (!data || typeof data !== 'object') throw new Error('Transcription returned an invalid response.');
   return {
-    language: data.language || null,
+    language: typeof data.language === 'string' ? data.language : null,
     words: Array.isArray(data.words)
-      ? data.words.filter(w => w && typeof w.text === 'string' && Number.isFinite(w.start) && Number.isFinite(w.end))
+      ? data.words.filter(w =>
+          w &&
+          typeof w.text === 'string' &&
+          w.text.trim().length > 0 &&
+          w.text.length < 500 &&
+          Number.isFinite(w.start) &&
+          Number.isFinite(w.end) &&
+          w.end > w.start,
+        ).slice(0, 10000)
       : [],
   };
 }

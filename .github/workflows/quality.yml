@@ -22,7 +22,7 @@ jobs:
       - name: Verify Node and npm
         run: node --version && npm --version
       - name: Install dependencies
-        run: npm install
+        run: npm ci
       - name: Typecheck
         run: npm run typecheck
       - name: Test

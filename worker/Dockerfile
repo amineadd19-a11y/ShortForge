@@ -19,6 +19,7 @@ RUN apt-get update \
     libgl1 \
   && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
   && chmod a+rx /usr/local/bin/yt-dlp \
+  && useradd --system --uid 10001 --create-home --home-dir /home/shortforge shortforge \
   && rm -rf /var/lib/apt/lists/*
 
 COPY worker/requirements.txt ./requirements.txt
@@ -30,6 +31,10 @@ RUN npm install --omit=dev
 
 COPY worker/*.mjs ./
 COPY worker/*.py ./
+
+RUN mkdir -p /tmp/shortforge && chown -R 10001:10001 /tmp/shortforge /app
+
+USER 10001:10001
 
 EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
