@@ -1,0 +1,31 @@
+name: Temporary lock regeneration
+
+on:
+  push:
+    branches: [feat/openshell-secure-render-pipeline]
+
+permissions:
+  contents: write
+
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/openshell-secure-render-pipeline
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Commit regenerated lockfile
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- package-lock.json; then
+            echo "package-lock.json already synchronized"
+          else
+            git add package-lock.json
+            git commit -m "ci: synchronize package lock"
+            git push origin HEAD:feat/openshell-secure-render-pipeline
+          fi
