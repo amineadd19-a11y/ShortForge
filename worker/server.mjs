@@ -427,9 +427,6 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && u.pathname === '/jobs') {
       if (!s3 || !bucket) return json(res, 503, { error: 'Worker object storage is not configured.' });
       if (!WORKER_TOKEN) return json(res, 503, { error: 'Worker authentication is not configured.' });
-      if (activeJobs >= MAX_CONCURRENT) {
-        return json(res, 429, { error: 'Worker is at capacity. Retry shortly.' });
-      }
 
       const x = await readBody(req);
       const idempotencyKey = String(x.idempotencyKey || req.headers['idempotency-key'] || '').trim();
@@ -444,7 +441,11 @@ const server = http.createServer(async (req, res) => {
         }
         if (existingId) idempotencyJobs.delete(idempotencyKey);
       }
-      if (!youtubeUrl(x.sourceUrl)) {
+      if (activeJobs >= MAX_CONCURRENT) {
+        return json(res, 429, { error: 'Worker is at capacity. Retry shortly.' });
+      }
+
+            if (!youtubeUrl(x.sourceUrl)) {
         return json(res, 400, { error: 'A valid YouTube HTTPS URL is required.' });
       }
 
