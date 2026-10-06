@@ -6,6 +6,7 @@ const YOUTUBE_HOSTS = new Set([
   'www.youtube.com',
   'm.youtube.com',
   'www.youtube-nocookie.com',
+  'youtu.be',
 ]);
 
 export const youtubeUrlSchema = z.string().trim().max(2048).url().refine((value) => {
