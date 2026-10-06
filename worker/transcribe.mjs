@@ -45,11 +45,25 @@ function runPython(inputPath, signal) {
 
 export async function transcribeWithWhisper(inputPath, signal) {
   const raw = await runPython(inputPath, signal);
-  const data = JSON.parse(raw);
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error('Transcription returned malformed JSON.');
+  }
+  if (!data || typeof data !== 'object') throw new Error('Transcription returned an invalid response.');
   return {
-    language: data.language || null,
+    language: typeof data.language === 'string' ? data.language : null,
     words: Array.isArray(data.words)
-      ? data.words.filter(w => w && typeof w.text === 'string' && Number.isFinite(w.start) && Number.isFinite(w.end))
+      ? data.words.filter(w =>
+          w &&
+          typeof w.text === 'string' &&
+          w.text.trim().length > 0 &&
+          w.text.length < 500 &&
+          Number.isFinite(w.start) &&
+          Number.isFinite(w.end) &&
+          w.end > w.start,
+        ).slice(0, 10000)
       : [],
   };
 }
