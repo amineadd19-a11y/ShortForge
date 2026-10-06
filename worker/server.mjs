@@ -4,7 +4,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdir, stat, unlink, readdir } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { transcribeWithWhisper } from './transcribe.mjs';
 import { analyzeVerticalCrop } from './reframe.mjs';
@@ -298,6 +298,7 @@ async function processJob(job) {
   const template = path.join(WORK_DIR, `${job.id}-input.%(ext)s`);
   const input = path.join(WORK_DIR, `${job.id}-input.mp4`);
   const output = path.join(WORK_DIR, `${job.id}.mp4`);
+  const outputKey = `shorts/${job.id}.mp4`;
 
   const watchdog = setTimeout(() => {
     if (job.status === 'processing') {
@@ -349,7 +350,8 @@ async function processJob(job) {
     assertNotAborted(controller.signal);
     job.progress = 90;
 
-    job.outputUrl = await upload(output, `shorts/${job.id}.mp4`);
+    job.outputUrl = await upload(output, outputKey);
+    job.outputKey = outputKey;
     assertNotAborted(controller.signal);
     job.progress = 100;
     job.completedAt = new Date().toISOString();
@@ -366,6 +368,10 @@ async function processJob(job) {
   } finally {
     clearTimeout(watchdog);
     jobControllers.delete(job.id);
+    if (job.status !== 'completed' && job.outputKey && s3 && bucket) {
+      await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: job.outputKey })).catch(() => {});
+      job.outputUrl = undefined;
+    }
     activeJobs = Math.max(0, activeJobs - 1);
     setTimeout(() => {
       jobs.delete(job.id);
