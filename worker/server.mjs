@@ -301,7 +301,7 @@ async function processJob(job) {
   const outputKey = `shorts/${job.id}.mp4`;
 
   const watchdog = setTimeout(() => {
-    if (job.status === 'processing') {
+    if (job.status === 'running') {
       job.error = 'Job timed out.';
       controller.abort();
     }
