@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdir, stat, unlink, readdir } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
@@ -26,6 +26,12 @@ const jobs = new Map();
 const jobControllers = new Map();
 const idempotencyJobs = new Map();
 let activeJobs = 0;
+const runtimeChecks = {
+  ffmpeg: Boolean(spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status === 0),
+  ffprobe: Boolean(spawnSync('ffprobe', ['-version'], { stdio: 'ignore' }).status === 0),
+  ytDlp: Boolean(spawnSync('yt-dlp', ['--version'], { stdio: 'ignore' }).status === 0),
+  python: Boolean(spawnSync('python', ['--version'], { stdio: 'ignore' }).status === 0),
+};
 const JOB_RETENTION_MS = Math.max(10 * 60_000, Number(process.env.JOB_RETENTION_MS || 3_600_000));
 
 const s3 = bucket
@@ -381,17 +387,25 @@ const server = http.createServer(async (req, res) => {
         service: 'shortforge-render-worker',
         version: '0.6.0',
         activeJobs,
+        runtime: runtimeChecks,
       });
     }
 
     if (req.method === 'GET' && u.pathname === '/readyz') {
-      const ready = Boolean(s3 && bucket && WORKER_TOKEN);
+      const ready = Boolean(
+        s3 &&
+        bucket &&
+        WORKER_TOKEN &&
+        runtimeChecks.ffmpeg &&
+        runtimeChecks.ffprobe &&
+        runtimeChecks.ytDlp &&
+        runtimeChecks.python,
+      );
       return json(res, ready ? 200 : 503, {
         ready,
         storage: Boolean(s3 && bucket),
         authentication: Boolean(WORKER_TOKEN),
-        transcription: true,
-        render: true,
+        runtime: runtimeChecks,
         activeJobs,
         maxConcurrent: MAX_CONCURRENT,
       });
