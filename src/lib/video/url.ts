@@ -1,21 +1,55 @@
 import { z } from 'zod';
 
-export const youtubeUrlSchema = z.string().url().refine((value) => {
+const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
+const YOUTUBE_HOSTS = new Set([
+  'youtube.com',
+  'www.youtube.com',
+  'm.youtube.com',
+  'www.youtube-nocookie.com',
+]);
+
+export const youtubeUrlSchema = z.string().trim().max(2048).url().refine((value) => {
   try {
     const url = new URL(value);
-    return ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be', 'www.youtube-nocookie.com'].includes(url.hostname);
+    const host = url.hostname.toLowerCase();
+    return (
+      url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      YOUTUBE_HOSTS.has(host)
+    );
   } catch {
     return false;
   }
-}, 'A valid YouTube URL is required');
+}, 'A valid YouTube HTTPS URL is required');
 
 export function getYouTubeVideoId(input: string): string | null {
-  const parsed = youtubeUrlSchema.safeParse(input.trim());
+  const parsed = youtubeUrlSchema.safeParse(input);
   if (!parsed.success) return null;
+
   const url = new URL(parsed.data);
-  if (url.hostname === 'youtu.be') return url.pathname.slice(1).split('/')[0] || null;
-  if (url.pathname === '/watch') return url.searchParams.get('v');
+  const host = url.hostname.toLowerCase();
+
+  if (host === 'youtu.be') {
+    const parts = url.pathname.split('/').filter(Boolean);
+    return parts.length === 1 && VIDEO_ID.test(parts[0]) ? parts[0] : null;
+  }
+
   const parts = url.pathname.split('/').filter(Boolean);
-  if (['shorts', 'embed', 'live'].includes(parts[0] ?? '')) return parts[1] ?? null;
-  return null;
+  let id: string | null = null;
+
+  if (url.pathname === '/watch') {
+    id = url.searchParams.get('v');
+  } else if (['shorts', 'embed', 'live'].includes(parts[0] ?? '')) {
+    id = parts[1] ?? null;
+  }
+
+  if (!id || !VIDEO_ID.test(id)) return null;
+
+  // A playlist URL without a concrete video is never accepted.
+  if (!url.searchParams.has('v') && url.searchParams.has('list') && url.pathname === '/watch') {
+    return null;
+  }
+
+  return id;
 }
