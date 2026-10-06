@@ -357,12 +357,13 @@ async function processJob(job) {
     job.completedAt = new Date().toISOString();
     transitionJob(job, 'completed');
   } catch (e) {
+    const timedOut = controller.signal.aborted && job.status === 'running' && job.error === 'Job timed out.';
     if (controller.signal.aborted && job.status === 'cancelling') transitionJob(job, 'cancelled');
     else if (job.status === 'running') transitionJob(job, 'failed');
     if (job.status === 'cancelled') {
       job.cancelledAt = new Date().toISOString();
       job.error = 'Job cancelled.';
-    } else {
+    } else if (!timedOut) {
       job.error = e instanceof Error ? e.message : 'Render failed.';
     }
   } finally {
