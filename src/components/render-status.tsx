@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 
 type Result = {
-  status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelling' | 'cancelled';
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelling' | 'cancelled';
   progress?: number;
   outputUrl?: string;
   error?: string;
@@ -31,7 +31,7 @@ export function RenderStatus({ jobId }: { jobId: string }) {
         }
         setError('');
         setResult(data);
-        if (data.status === 'queued' || data.status === 'processing' || data.status === 'cancelling') {
+        if (data.status === 'queued' || data.status === 'running' || data.status === 'cancelling') {
           window.setTimeout(poll, 2000);
         }
       } catch {
@@ -95,12 +95,12 @@ export function RenderStatus({ jobId }: { jobId: string }) {
   return (
     <div className="space-y-3">
       <p className="text-sm text-slate-300">
-        {result.status === 'processing' ? 'Rendering your Short…' : result.status === 'cancelling' ? 'Cancelling render…' : 'Render job queued…'}
+        {result.status === 'running' ? 'Rendering your Short…' : result.status === 'cancelling' ? 'Cancelling render…' : 'Render job queued…'}
       </p>
       <div className="h-2 overflow-hidden rounded-full bg-white/10">
         <div
           className="h-full rounded-full bg-white transition-all duration-500"
-          style={{ width: `${progress || (result.status === 'processing' ? 15 : 5)}%` }}
+          style={{ width: `${progress || (result.status === 'running' ? 15 : 5)}%` }}
         />
       </div>
       <div className="flex items-center justify-between gap-3">
